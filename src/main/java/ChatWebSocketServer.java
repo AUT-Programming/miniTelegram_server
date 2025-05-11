@@ -11,6 +11,7 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
+import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -95,40 +96,50 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     @Override
     public void onMessage(WebSocket conn, String json) {
-        Long userId = userBySocket.get(conn);
+        Long senderId = userBySocket.get(conn);
         Long chatId = chatBySocket.get(conn);
-        if (userId == null || chatId == null) {
+        if (senderId == null || chatId == null) {
             conn.send("Error: not authenticated or not in a chat");
             return;
         }
 
-        MessageDTO dto = gson.fromJson(json, MessageDTO.class);
-
-        // persist via DAO
+        MessageDTO in = gson.fromJson(json, MessageDTO.class);
         Message saved = messageDao.saveMessage(
-                userId,
+                senderId,
                 chatId,
-                dto.content,
-                dto.replyToId,
-                dto.mediaUrls
+                in.content,
+                in.replyToMessageId,
+                in.mediaUrls
         );
 
-        // build outbound DTO
-        MessageDTO out = new MessageDTO();
-        out.messageId = saved.getId();
-        out.senderId  = userId;
-        out.chatId    = chatId;
-        out.content   = saved.getContent();
-        out.replyToId = saved.getReplyTo() == null ? null : saved.getReplyTo().getId();
-        out.mediaUrls = dto.mediaUrls;
-        out.sentAt    = saved.getSentAt().getTime();
+        String senderName;
+        try (var session = sessionFactory.openSession()) {
+            senderName = session.get(User.class, senderId).getProfile().getDisplayName();
+        }
 
-        String outJson = gson.toJson(out);
+        Long replyToId = saved.getReplyTo() == null ? null : saved.getReplyTo().getId();
+        String sentAtIso = Instant.ofEpochMilli(saved.getSentAt().getTime()).toString();
 
-        // broadcast
-        sessionsPerChat.getOrDefault(chatId, Set.of()).forEach(peer -> {
-            if (peer.isOpen()) peer.send(outJson);
-        });
+        for (WebSocket peer : sessionsPerChat.getOrDefault(chatId, Set.of())) {
+            if (!peer.isOpen()) continue;
+
+            Long receiverId = userBySocket.get(peer);
+            String receiverName;
+            try (var session = sessionFactory.openSession()) {
+                receiverName = session.get(User.class, receiverId).getProfile().getDisplayName();
+            }
+
+            MessageDTO out = new MessageDTO();
+            out.messageId = saved.getId();
+            out.senderDisplayName = senderName;
+            out.receiverDisplayName = receiverName;
+            out.content = saved.getContent();
+            out.replyToMessageId = replyToId;
+            out.sentAt = sentAtIso;
+            out.mediaUrls = in.mediaUrls;
+
+            peer.send(gson.toJson(out));
+        }
     }
 
     @Override

@@ -1,11 +1,20 @@
 package dao;
 
 import entity.ChatMember;
+import entity.User;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import util.HibernateUtil;
 
 public class ChatMemberDao {
+    public User findUserByUsername(String username) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                            "FROM User u WHERE u.username = :uname", User.class)
+                    .setParameter("uname", username)
+                    .uniqueResult();
+        }
+    }
     public void save(ChatMember chatMember) {
         Transaction transaction = null;
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {

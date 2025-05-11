@@ -12,55 +12,72 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ChatHttpHandler implements HttpHandler {
-
     private final ChatDao chatDao = new ChatDao();
+    private final Gson gson = new Gson();
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
-        if ("POST".equals(exchange.getRequestMethod())) {
-            String token = exchange.getRequestHeaders().getFirst("Authorization");
+        String auth = exchange.getRequestHeaders().getFirst("Authorization");
+        if (auth == null) {
+            exchange.sendResponseHeaders(401, -1);
+            return;
+        }
+        String username = JwtUtil.validateToken(auth);
+        if (username == null) {
+            exchange.sendResponseHeaders(401, -1);
+            return;
+        }
 
-            if (token == null || token.isEmpty()) {
-                exchange.sendResponseHeaders(401, -1); // Unauthorized
-                return;
+        String method = exchange.getRequestMethod();
+        try {
+            if ("POST".equalsIgnoreCase(method)) {
+                handleCreate(exchange, username);
+            } else if ("GET".equalsIgnoreCase(method)) {
+                handleList(exchange, username);
+            } else {
+                exchange.sendResponseHeaders(405, -1);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            exchange.sendResponseHeaders(500, -1);
+        }
+    }
 
-            String username = JwtUtil.validateToken(token);
-            if (username == null) {
-                exchange.sendResponseHeaders(401, -1); // Unauthorized
-                return;
-            }
+    private void handleCreate(HttpExchange exchange, String username) throws IOException {
+        // Parse Chat from body
+        InputStreamReader reader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
+        Chat chat = gson.fromJson(reader, Chat.class);
 
-            // Read the request body
-            InputStreamReader reader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
-            Chat chat = new Gson().fromJson(reader, Chat.class);
+        chat.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+        chatDao.saveChat(chat);
 
-            // Generate a timestamp for the chat creation
-            chat.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", chat.getId());
+        String json = gson.toJson(result);
+        byte[] resp = json.getBytes(StandardCharsets.UTF_8);
 
-            // Save the chat to the database
-            try {
-                chatDao.saveChat(chat);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(201, resp.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(resp);
+        }
+    }
 
-                // Respond with success
-                String response = "Chat created successfully!";
-                exchange.sendResponseHeaders(201, response.getBytes().length); // 201 Created
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(response.getBytes());
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                String response = "Failed to create chat";
-                exchange.sendResponseHeaders(500, response.getBytes().length); // 500 Internal Server Error
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(response.getBytes());
-                }
-            }
-        } else {
-            // If not POST, return 405 Method Not Allowed
-            exchange.sendResponseHeaders(405, -1); // Method Not Allowed
+    private void handleList(HttpExchange exchange, String username) throws IOException {
+        List<Chat> chats = chatDao.getChatsForUser(username);
+
+        String json = gson.toJson(chats);
+        byte[] resp = json.getBytes(StandardCharsets.UTF_8);
+
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, resp.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(resp);
         }
     }
 }

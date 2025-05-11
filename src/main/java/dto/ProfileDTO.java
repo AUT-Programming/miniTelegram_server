@@ -1,19 +1,13 @@
 package dto;
 
 public class ProfileDTO {
+    private String username;
     private String displayName;
     private String profilePicture;
 
-    public ProfileDTO(String displayName, String profilePicture) {
+    public ProfileDTO(String username, String displayName, String profilePicture) {
+        this.username = username;
         this.displayName = displayName;
         this.profilePicture = profilePicture;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getProfilePicture() {
-        return profilePicture;
     }
 }

@@ -3,7 +3,7 @@ POST http://localhost:8080/user/signup
 Content-Type: application/json
 
 {
-  "username": "alice2",
+  "username": "alice3",
   "password": "alicepass"
 }
 
@@ -12,20 +12,19 @@ POST http://localhost:8080/user/login
 Content-Type: application/json
 
 {
-  "username": "alice2",
+  "username": "alice",
   "password": "alicepass"
 }
 
 ### 3. Create a Chat
-@AUTH_TOKEN = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGljZSIsImlhdCI6MTc0NjkxMTg4NCwiZXhwIjoxNzQ2OTIyNjg0fQ.U09De5eUW51pCakp72KNGv_tq1XO085jY1osARe3nTU
+@AUTH_TOKEN = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGljZTIiLCJpYXQiOjE3NDY5OTIyNDQsImV4cCI6MTc0NzEwMDI0NH0.VZuyM59Sj2sn8TIgScBZv283IuinKPqRhkr_ewogJc0
 POST http://localhost:8080/chat
 Content-Type: application/json
 Authorization: {{AUTH_TOKEN}}
 
 {
-  "name": "Test Group",
-  "type": "group",
-  "ownerId": 1
+  "name": "Test Group 5",
+  "type": "group"
 }
 
 ### 4. Add Member to Chat
@@ -34,8 +33,8 @@ Content-Type: application/json
 Authorization: {{AUTH_TOKEN}}
 
 {
-  "chatId": 1,
-  "userId": 2,
+  "chatId": 3,
+  "username": "alice2",
   "role": "member"
 }
 
@@ -52,3 +51,7 @@ Authorization: {{AUTH_TOKEN}}
   "displayName": "Alice",
   "profilePicture": "https://example.com/alice.jpg"
 }
+
+### 7. Get All Chats
+GET http://localhost:8080/chat
+Authorization: {{AUTH_TOKEN}}

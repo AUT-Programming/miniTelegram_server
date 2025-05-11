@@ -3,11 +3,11 @@ package dto;
 import java.util.List;
 
 public class MessageDTO {
-    public Long messageId;          // set by server
-    public Long senderId;           // set by server
-    public Long chatId;             // set by server
-    public Long sentAt;             // set by server
+    public Long messageId;
+    public String senderDisplayName;
+    public String receiverDisplayName;
     public String content;
-    public Long replyToId;          // optional
-    public List<String> mediaUrls;  // optional
+    public Long replyToMessageId;
+    public String sentAt;
+    public List<String> mediaUrls;
 }

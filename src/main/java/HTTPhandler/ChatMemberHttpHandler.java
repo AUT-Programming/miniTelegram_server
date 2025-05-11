@@ -4,11 +4,14 @@ import com.google.gson.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import dao.ChatMemberDao;
-import entity.*;
-
-import org.hibernate.Session;
+import entity.Chat;
+import entity.ChatMember;
+import entity.User;
+import entity.ChatRole;
 import util.HibernateUtil;
 import util.JwtUtil;
+
+import org.hibernate.Session;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -20,68 +23,73 @@ public class ChatMemberHttpHandler implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
-        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            String token = exchange.getRequestHeaders().getFirst("Authorization");
-
-            if (token == null || token.isEmpty()) {
-                exchange.sendResponseHeaders(401, -1); // Unauthorized
-                return;
-            }
-
-            String username = JwtUtil.validateToken(token);
-            if (username == null) {
-                exchange.sendResponseHeaders(401, -1); // Unauthorized
-                return;
-            }
-
-            InputStreamReader reader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
-            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-
-            Long userId = json.get("userId").getAsLong();
-            Long chatId = json.get("chatId").getAsLong();
-            String roleStr = json.get("role").getAsString();
-
-            ChatRole role = ChatRole.valueOf(roleStr.toUpperCase());
-
-            try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                User user = session.get(User.class, userId);
-                Chat chat = session.get(Chat.class, chatId);
-
-                if (user == null || chat == null) {
-                    String response = "Invalid user or chat ID";
-                    exchange.sendResponseHeaders(400, response.getBytes().length);
-                    try (OutputStream os = exchange.getResponseBody()) {
-                        os.write(response.getBytes());
-                    }
-                    return;
-                }
-
-                ChatMember chatMember = new ChatMember(user, chat, new Timestamp(System.currentTimeMillis()), role);
-                if (chatMemberDao.chatMemberExists(chatMember.getChat().getId(), chatMember.getUser().getId())) {
-                    String response = "Chat member already exists.";
-                    exchange.sendResponseHeaders(409, response.getBytes().length);
-                    try (OutputStream os = exchange.getResponseBody()) {
-                        os.write(response.getBytes());
-                    }
-                    return;
-                }
-                chatMemberDao.save(chatMember);
-
-                String response = "ChatMember created successfully!";
-                exchange.sendResponseHeaders(201, response.getBytes().length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(response.getBytes());
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                String response = "Failed to create ChatMember";
-                exchange.sendResponseHeaders(500, response.getBytes().length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(response.getBytes());
-                }
-            }
-        } else {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+
+        String auth = exchange.getRequestHeaders().getFirst("Authorization");
+        if (auth == null) {
+            exchange.sendResponseHeaders(401, -1);
+            return;
+        }
+        String callerUsername = JwtUtil.validateToken(auth);
+        if (callerUsername == null) {
+            exchange.sendResponseHeaders(401, -1);
+            return;
+        }
+
+        InputStreamReader reader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
+        JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
+
+        String memberUsername = json.get("username").getAsString();
+        Long chatId = json.get("chatId").getAsLong();
+        String roleStr = json.get("role").getAsString();
+
+        ChatRole role;
+        try {
+            role = ChatRole.valueOf(roleStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            sendResponse(exchange, 400, "Invalid role: " + roleStr);
+            return;
+        }
+
+        User member = chatMemberDao.findUserByUsername(memberUsername);
+        Chat chat;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            chat = session.get(Chat.class, chatId);
+        }
+
+        if (member == null || chat == null) {
+            sendResponse(exchange, 400, "Unknown user or chat");
+            return;
+        }
+
+        if (chatMemberDao.chatMemberExists(chatId, member.getId())) {
+            sendResponse(exchange, 409, "Chat member already exists");
+            return;
+        }
+
+        ChatMember cm = new ChatMember();
+        cm.setUser(member);
+        cm.setChat(chat);
+        cm.setJoinedAt(new Timestamp(System.currentTimeMillis()));
+        cm.setRole(role);
+
+        try {
+            chatMemberDao.save(cm);
+            sendResponse(exchange, 201, "ChatMember created successfully");
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(exchange, 500, "Failed to create ChatMember");
+        }
+    }
+
+    private void sendResponse(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
         }
     }
 }

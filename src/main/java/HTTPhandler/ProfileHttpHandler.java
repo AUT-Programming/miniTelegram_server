@@ -100,6 +100,7 @@ public class ProfileHttpHandler implements HttpHandler {
 
             // Use DTO to avoid full serialization
             ProfileDTO profileDTO = new ProfileDTO(
+                    profile.getUser().getUsername(),
                     profile.getDisplayName(),
                     profile.getProfilePicture()
             );
